@@ -1,0 +1,9 @@
+name: dpc2-env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pyqt
+  - pip
+  - pip:
+      - -r requirements.txt

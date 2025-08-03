@@ -1,0 +1,1 @@
+Pull requests welcome. Open issues for discussion first.

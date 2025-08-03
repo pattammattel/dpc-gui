@@ -1,0 +1,14 @@
+h5py
+numpy
+pandas
+pyqtgraph
+pystackreg
+scikit-image
+scikit-learn
+scipy
+tifffile
+packaging
+pyqt6
+xraydb
+pytest
+pytest-qt
