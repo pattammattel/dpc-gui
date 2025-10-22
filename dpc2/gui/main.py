@@ -1,6 +1,6 @@
 import sys
 import logging
-from PyQt6 import QtWidgets
+from PyQt5 import QtWidgets
 from .windows.dpc2_window import dpc2Window
 from . import UI_DIR
 

@@ -10,7 +10,7 @@ import tifffile as tf
 from scipy.ndimage import center_of_mass
 from pyqtgraph import functions as fn
 from functools import wraps
-# from PyQt6 import QtWidgets, uic, QtCore, QtGui, QtTest
+# from PyQt5 import QtWidgets, uic, QtCore, QtGui, QtTest
 # from PyQt6.QtWidgets import QMessageBox
 # from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt5 import QtWidgets, uic, QtCore, QtGui, QtTest
