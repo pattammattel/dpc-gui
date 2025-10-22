@@ -1,8 +1,8 @@
 import sys
 import logging
 from PyQt5 import QtWidgets
-from .windows.dpc2_window import dpc2Window
-from . import UI_DIR
+from dpc2.gui.windows.dpc_gui import DiffViewWindow
+from dpc2.gui import UI_DIR
 
 def start_dpc2():
     # configure logging…
@@ -14,7 +14,7 @@ def start_dpc2():
         with open(qss_file, "r", encoding="utf-8") as f:
             app.setStyleSheet(f.read())
 
-    win = dpc2Window()
+    win = DiffViewWindow()
     win.show()
     sys.exit(app.exec())
 

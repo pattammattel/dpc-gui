@@ -32,7 +32,7 @@ import tifffile as tf
 import warnings
 warnings.simplefilter(action='ignore', category=UserWarning)
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
-from dpc_calc2 import *
+from dpc2.utils.dpc_calc2 import *
 
 hxn_detector_config = {'merlin1':{'pixel_size_um':55,
                                   'distance_m':0.500},

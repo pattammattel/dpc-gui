@@ -17,11 +17,11 @@ from PyQt5 import QtWidgets, uic, QtCore, QtGui, QtTest
 from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import QObject, pyqtSignal
 pg.setConfigOption('imageAxisOrder', 'row-major') # best performance
-ui_path = os.path.dirname(os.path.abspath(__file__))
 warnings.filterwarnings('ignore', category=RuntimeWarning)
-from h5_data_io import *
-from dpc_kernel2 import *
-from image_utils import *
+from dpc2.utils.dpc_fileio import *
+from dpc2.utils.dpc_kernel2 import *
+from dpc2.utils.image_utils import *
+from dpc2.gui import UI_DIR
 
 #beamline specific
 detector_list = ["eiger2_image","merlin1","merlin2", "eiger1"]
@@ -109,7 +109,7 @@ class DiffViewWindow(QtWidgets.QMainWindow):
 
     def __init__(self):
         super(DiffViewWindow, self).__init__()
-        uic.loadUi(os.path.join(ui_path,'dpc_view.ui'), self)
+        uic.loadUi(os.path.join(UI_DIR,'dpc2.ui'), self)
         print("ui loaded")
         
         #sys.stdout = EmittingStream(textWritten=self.normalOutputWritten)
