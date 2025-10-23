@@ -21,10 +21,10 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 from dpc2.utils.dpc_fileio import *
 from dpc2.utils.dpc_kernel2 import *
 from dpc2.utils.image_utils import *
-from dpc2.gui import UI_DIR
+from dpc2.gui import UI_DIR, DETECTOR_DATA_KEY_MAP
 
 #beamline specific
-detector_list = ["eiger2_image","merlin1","merlin2", "eiger1"]
+detector_list = ["eiger2","merlin1","merlin2", "eiger1"]
 scalars_list = ["None", "sclr1_ch1","sclr1_ch2","sclr1_ch3","sclr1_ch4","sclr1_ch5"]
 
 def load_stylesheet(path):
@@ -109,7 +109,7 @@ class DiffViewWindow(QtWidgets.QMainWindow):
 
     def __init__(self):
         super(DiffViewWindow, self).__init__()
-        uic.loadUi(os.path.join(UI_DIR,'dpc2.ui'), self)
+        uic.loadUi(os.path.join(UI_DIR,'dpc_view.ui'), self)
         print("ui loaded")
         
         #sys.stdout = EmittingStream(textWritten=self.normalOutputWritten)
@@ -182,7 +182,7 @@ class DiffViewWindow(QtWidgets.QMainWindow):
                             "sid":int(self.le_sid.text()), 
                             "threshold":(self.sb_low_threshold.value(),self.sb_high_threshold.value()),
                             "mon":self.cb_norm_scalars.currentText(),
-                            "det":self.cb_det_list.currentText(),
+                            "det":DETECTOR_DATA_KEY_MAP[self.cb_det_list.currentText()],
                             "roi":None,
                             "mask":None,
                             }
@@ -194,14 +194,14 @@ class DiffViewWindow(QtWidgets.QMainWindow):
         self.create_load_params()
         self.det = self.load_params["det"]
         # export_single_detector_h5 now takes `det=` (not `dets=`) and returns a flat dict
-        self.all_data_dict = export_single_detector_h5(
+        self.all_data_dict = export_diff_data_as_h5_single(
             self.load_params["sid"],
             det=self.det,
             wd=self.load_params["wd"],
             mon=self.load_params["mon"],
             compression=None,
             save_and_return=True
-        )[0]
+        )
 
 
     def load_im_stack_from_h5(self):
@@ -238,15 +238,16 @@ class DiffViewWindow(QtWidgets.QMainWindow):
 
 
     def get_diff_data(self):
-        # flat keys now: "det" and "Io", no nested diff_data dict
-        self.diff_stack = self.all_data_dict["det"]
+        # Use the correct key returned from export
+        self.diff_stack = self.all_data_dict["det_images"]
         self.Io = self.all_data_dict["Io"]
 
         # shape is (dim1, dim2, roi_y, roi_x)
-        self.im_y, self.im_x, self.roi_y, self.roi_x = self.diff_stack.shape
+        self.im_len, self.roi_y, self.roi_x = self.diff_stack.shape
 
         # flatten back into (n_steps, roi_y, roi_x)
-        self.diff_stack = self.diff_stack.reshape(-1, self.roi_y, self.roi_x)
+        #self.diff_stack = self.diff_stack.reshape(-1, self.roi_y, self.roi_x)
+
 
     
     def _inject_dict(self, d: dict, prefix: str = ""):

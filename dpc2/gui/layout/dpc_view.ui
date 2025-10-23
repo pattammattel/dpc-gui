@@ -134,7 +134,7 @@
                 </sizepolicy>
                </property>
                <property name="text">
-                <string>/Users/ajithpattammattel/Downloads/testing</string>
+                <string>/nsls2/data/hxn/legacy/users/Beamline_Performance/testing</string>
                </property>
               </widget>
              </item>
@@ -179,7 +179,7 @@
                   <bool>true</bool>
                  </property>
                  <property name="text">
-                  <string>338901</string>
+                  <string>375089</string>
                  </property>
                 </widget>
                </item>
@@ -958,7 +958,7 @@
      <x>0</x>
      <y>0</y>
      <width>1451</width>
-     <height>24</height>
+     <height>20</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">

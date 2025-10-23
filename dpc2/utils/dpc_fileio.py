@@ -10,12 +10,25 @@ import numpy as np
 import shutil
 import tifffile as tf
 from tqdm import tqdm
-try:    
+from pathlib import Path
+from dpc2.gui import DETECTOR_DATA_KEY_MAP
+
+try:
     from hxntools.CompositeBroker import db
     from hxntools.scan_info import get_scan_positions
-except:
-    print("Offline analysis; No BL data available")
-    pass
+except ImportError:
+    print("Trying overlay environment...")
+    sys.path.insert(0, '/nsls2/data2/hxn/shared/config/bluesky_overlay/2023-1.0-py310-tiled/lib/python3.10/site-packages')
+    try:
+        from hxntools.CompositeBroker import db
+        from hxntools.scan_info import get_scan_positions
+        #print("Offline analysis; loaded hxntools manually")
+    except ImportError:
+        db = None
+        get_scan_positions = None
+        print("Offline analysis; hxntools not found")
+
+
 import csv
 import getpass
 from typing import List, Optional, Union
@@ -24,19 +37,11 @@ warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=UserWarning)
 
-if  os.getlogin().startswith("xf03") or os.getlogin().startswith("pattam"):
 
-    #sys.path.insert(0,'/nsls2/data2/hxn/shared/config/bluesky_overlay/2023-1.0-py310-tiled/lib/python3.10/site-packages')
-    from hxntools.CompositeBroker import db
-    from hxntools.scan_info import get_scan_positions
-
-else: 
-    db = None
-    print("Offline analysis; No BL data available") 
+det_params = {'merlin1':55, "merlin2":55, "eiger2_image":75}
 
 
 
-det_params = {'merlin1':55, "merlin2":55, "eiger2_images":75}
 
 def parse_scan_range(str_scan_range):
     """
@@ -131,6 +136,28 @@ def get_path(scan_id, key_name='merlin1'):
     #id_list = [v.data[key_name] for v in e]
     id_list = [v['data'][key_name] for v in e]
     rootpath = db.reg.resource_given_datum_id(id_list[0])['root']
+
+    # Convert to Path object
+    root = Path(rootpath)
+
+    # Check if it exists and resolve if it's a symlink
+    if root.exists():
+        try:
+            root = root.resolve(strict=False)
+        except Exception as e:
+            print(f"Warning: Failed to resolve path {root}: {e}")
+    else:
+        print(f"Warning: root path {root} does not exist.")
+
+    # Use root as string
+    rootpath = str(root)
+
+    if str(rootpath).startswith("/data"):
+
+        rootpath = '/nsls2/data2/hxn/legacy'
+
+    print(rootpath)
+
     flist = [db.reg.resource_given_datum_id(idv)['resource_path'] for idv in id_list]
     flist = set(flist)
     fpath = [os.path.join(rootpath, file_path) for file_path in flist]
@@ -141,19 +168,23 @@ def get_flyscan_dimensions(hdr):
     # 2D_FLY_PANDA: prefer 'dimensions', fallback to 'shape'
     if 'scan' in start_doc and start_doc['scan'].get('type') == '2D_FLY_PANDA':
         if 'dimensions' in start_doc:
-            return start_doc['dimensions']
+            dim = start_doc['dimensions']
         elif 'shape' in start_doc:
-            return start_doc['shape']
+            dim = start_doc['shape']
         else:
             raise ValueError("No dimensions or shape found for 2D_FLY_PANDA scan")
+
+        return dim[::-1]
     # rel_scan: use 'shape' or 'num_points'
     elif start_doc.get('plan_name') == 'rel_scan':
         if 'shape' in start_doc:
-            return start_doc['shape']
+            dim = start_doc['shape']
         elif 'num_points' in start_doc:
-            return [start_doc['num_points']]
+            dim = [start_doc['num_points']]
         else:
             raise ValueError("No shape or num_points found for rel_scan")
+
+        return dim[::-1]
     else:
         raise ValueError("Unknown scan type for get_flyscan_dimensions")
 
@@ -452,8 +483,22 @@ def export_fly2d_as_h5_single(
     if exit_status != '' and exit_status != 'success':
         print(f"[EXPORT] Scan {sid} exit_status is {exit_status}, skipping export")
         return {"scan_id": sid, "scan_type": scan_type, "detectors": detectors, "exit_status": exit_status, "status": "skipped_failed", "raw_data_path": raw_data_path, "os_user": os_user}
-    if det not in start_doc["scan"].get("detectors", []):
-        raise ValueError(f"[DETECTOR] Scan {sid} does not use detector {det}")
+
+    # # Validate against scan metadata
+    # detectors_in_scan = start_doc["scan"].get("detectors", [])
+    # if det not in detectors_in_scan:
+    #     raise ValueError(f"[DETECTOR] Scan {sid} does not use detector '{det}'")
+
+    # Validate if expected data key is in event data
+    # (assuming you're inspecting a sample Event or Descriptor)
+    descriptor = hdr.descriptors[0]
+    data_keys = descriptor["data_keys"].keys()
+
+    if det not in data_keys:
+        raise ValueError(
+            f"[DATA] Expected data key '{det}' not found in event stream for scan {sid}"
+        )
+
     print(f"[SCAN TYPE] Scan {sid} uses plan 2D_FLY_PANDA")
     common = _load_scan_common(hdr, mon)
     if not common:
@@ -528,8 +573,8 @@ def export_fly2d_as_h5_single(
 
         def load_det():
             with h5py.File(out_fn, "r") as f:
-                print(f"[RETURN DATA] diff data is flipped along y axis when returned")
-                return np.flip(f[f"/diff_data/{det}/det_images"][()], 1)
+                #print(f"[RETURN DATA] diff data is flipped along y axis when returned")
+                return f[f"/diff_data/{det}/det_images"][()]
             
 
         """common;
@@ -782,14 +827,14 @@ def export_diff_data_as_h5_batch(
                     "os_user", 
                     "error"]
     log_rows = []
-
+    os_user = os.getlogin() if hasattr(os, 'getlogin') else getpass.getuser()
     for sid in tqdm(sid_list, desc="Batch exporting scans"):
         
         out_fn = os.path.join(wd, f"scan_{sid}_{det}.h5")
         if not overwrite and os.path.exists(out_fn):
             print(f"Skipping scan {sid!r}: {out_fn} already exists (overwrite=False)")
             
-            os_user = os.getlogin() if hasattr(os, 'getlogin') else getpass.getuser()
+            
             log_rows.append({   "scan_id": sid, 
                                 "scan_type": '', 
                                 "detectors": '', 
