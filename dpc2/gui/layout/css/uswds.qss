@@ -1,5 +1,3 @@
-
-
 /* Form Inputs */
 QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox, QDateEdit, QTimeEdit {
     padding: 4px;  /* was 6px */

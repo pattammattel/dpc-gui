@@ -132,85 +132,153 @@ def recon(gx, gy, dx=0.1, dy=0.1, pad=1, w=1.0, filter = True):
 
 # Function to run DPC (Differential Phase Contrast) on a single image
 def run_dpc(img, ref_fx, ref_fy, start_point, 
-            max_iters, solver, reverse_x, reverse_y):
-    
+            max_iters, solver, reverse_x, reverse_y,
+            roi_slice=None, mask=None):
+    """
+    Run DPC reconstruction on a single image with optional masking and cropping.
+
+    Parameters
+    ----------
+    img : 2D numpy array or h5py slice
+        Full image to process.
+    roi_slice : tuple of slices
+        Pixel slice (y, x) for cropping.
+    mask : 2D array
+        Binary mask to apply after cropping (same shape as cropped ROI).
+    """
+    # Apply ROI cropping
+    if roi_slice is not None:
+        img = img[roi_slice]
+
+    # Apply mask
+    if mask is not None:
+        img = img * mask
+
+    # Compute DPC shifts
     fx, fy = calc_img_shift(img)
 
-    # Minimize RSS for x-axis shift
-    res_x = minimize(rss, 
-                     start_point, 
-                     args=(ref_fx, fx, get_beta(ref_fx)), 
-                     method=solver, 
-                     tol=1e-6, 
-                     options=dict(maxiter=max_iters))
+    res_x = minimize(
+        rss, start_point,
+        args=(ref_fx, fx, get_beta(ref_fx)),
+        method=solver,
+        tol=1e-6,
+        options=dict(maxiter=max_iters)
+    )
     vx_x = res_x.x
     rx = res_x.fun
     a = vx_x[0]
     gx = reverse_x * vx_x[1]
 
-    # Minimize RSS for y-axis shift
-    res_y = minimize(rss, 
-                     start_point, 
-                     args=(ref_fy, fy, 
-                     get_beta(ref_fy)), 
-                     method=solver, tol=1e-6,
-                     options=dict(maxiter=max_iters))
-    
+    res_y = minimize(
+        rss, start_point,
+        args=(ref_fy, fy, get_beta(ref_fy)),
+        method=solver,
+        tol=1e-6,
+        options=dict(maxiter=max_iters)
+    )
     vy_y = res_y.x
     ry = res_y.fun
     gy = reverse_y * vy_y[1]
 
     return a, gx, gy, rx, ry
 
+
 # Function to process a stack of images (DPC reconstruction)
 def process_images_stack(det_images, ref_fx, ref_fy, start_point, 
-                         max_iter, solver, reverse_x, reverse_y):
-    # Initialize arrays to hold results for each image in the stack
-    a = np.zeros((det_images.shape[0],))
-    gx = np.zeros((det_images.shape[0],))
-    gy = np.zeros((det_images.shape[0],))
-    rx = np.zeros((det_images.shape[0],))
-    ry = np.zeros((det_images.shape[0],))
+                         max_iter, solver, reverse_x, reverse_y,
+                         roi_slice=None, mask=None):
+    # Detect and resolve lazy loader
+    if callable(det_images):
+        det_images = det_images()  # h5py.Dataset
 
-    # Parallel processing of multiple images in the stack
-    results = Parallel(n_jobs=-1)(delayed(run_dpc)(det_images[i], ref_fx, ref_fy, start_point, max_iter, solver, reverse_x, reverse_y) for i in range(det_images.shape[0]))
+    num_images = det_images.shape[0]
 
-    # Unpack results from parallel processing
+    # Initialize arrays to hold results
+    a = np.zeros((num_images,))
+    gx = np.zeros((num_images,))
+    gy = np.zeros((num_images,))
+    rx = np.zeros((num_images,))
+    ry = np.zeros((num_images,))
+
+    # Parallel processing
+    results = Parallel(n_jobs=-1)(
+        delayed(run_dpc)(
+            det_images[i, :, :],
+            ref_fx, ref_fy, start_point,
+            max_iter, solver, reverse_x, reverse_y,
+            roi_slice=roi_slice,
+            mask=mask
+        )
+        for i in range(num_images)
+    )
+
     for i, result in enumerate(results):
         a[i], gx[i], gy[i], rx[i], ry[i] = result
 
     return a, gx, gy, rx, ry
 
+
 # Main function to reconstruct DPC from a stack of images
-def recon_dpc_from_im_stack(det_images, ref_image_num=1, start_point=[1, 0], num_xy = [20,20],
+def recon_dpc_from_im_stack(det_images, ref_image_num=1, start_point=[1, 0], num_xy=[20, 20],
                             max_iter=1000, solver="Nelder-Mead", reverse_x=1, reverse_y=1,
-                            energy = 12, det_pixel = 55, det_dist = 2.05,
-                            dxy = [0.020,0.020]):
-    
-    if det_images.ndim == 4:
-        ydim,xdim,yroi,xroi = det_images.shape
-        # Reshape image stack to process as individual images
-        det_images = det_images.reshape(-1, yroi, xroi)
+                            energy=12, det_pixel=55, det_dist=2.05, dxy=[0.020, 0.020],
+                            roi_slice=None, mask=None):
+    """
+    Reconstructs DPC phase image from a 3D (or lazy) image stack.
 
-    elif det_images.ndim ==3:
-        _,yroi,xroi = det_images.shape
-        ydim,xdim = num_xy
+    Parameters
+    ----------
+    det_images : array, h5py.Dataset, or lazy loader
+    roi_slice : tuple of slice
+        Pixel region to crop per image before processing
+    mask : 2D numpy array
+        Binary mask applied to each cropped image
+    """
 
-    else: raise ValueError(f"Wrong array shape: {det_images.ndim =}; expected >3")
+    # Resolve lazy loader if needed
+    if callable(det_images):
+        dataset = det_images()
+        lazy = True
+    else:
+        dataset = det_images
+        lazy = False
 
-    # Getting reference image shifts
-    ref_fx, ref_fy = calc_img_shift(det_images[int(ref_image_num)])
+    shape = dataset.shape
+    if len(shape) == 4:
+        ydim, xdim, yroi, xroi = shape
+        dataset = dataset.reshape(-1, yroi, xroi)
+    elif len(shape) == 3:
+        _, yroi, xroi = shape
+        ydim, xdim = num_xy
+    else:
+        raise ValueError(f"Invalid input shape: {shape}")
 
-    # Process images in parallel
-    a, gx, gy, rx, ry = process_images_stack(det_images, ref_fx, ref_fy, start_point, max_iter, solver, reverse_x, reverse_y)
+    # Get reference image
+    ref_image = dataset[ref_image_num, :, :]
+    if roi_slice is not None:
+        ref_image = ref_image[roi_slice]
+    if mask is not None:
+        ref_image = ref_image * mask
 
-    # Adjust final calculations (reshape and compute phase)
-    gx *= len(ref_fx) * det_pixel  / (12.4e-4 / energy * det_dist*1e6) 
-    gy *= len(ref_fy) * det_pixel  / (12.4e-4 / energy  * det_dist*1e6)
+    ref_fx, ref_fy = calc_img_shift(ref_image)
 
-    gx_ = gx.reshape(ydim,xdim)
-    gy_ = gy.reshape(ydim,xdim)
-    a_ = a.reshape(ydim,xdim)
-    phi = recon(gx_,gy_,dxy[0],dxy[1])  
+    # Compute DPC on full/lazy stack
+    a, gx, gy, rx, ry = process_images_stack(
+        dataset, ref_fx, ref_fy, start_point,
+        max_iter, solver, reverse_x, reverse_y,
+        roi_slice=roi_slice,
+        mask=mask
+    )
+
+    # DPC scaling
+    gx *= len(ref_fx) * det_pixel / (12.4e-4 / energy * det_dist * 1e6)
+    gy *= len(ref_fy) * det_pixel / (12.4e-4 / energy * det_dist * 1e6)
+
+    gx_ = gx.reshape(ydim, xdim)
+    gy_ = gy.reshape(ydim, xdim)
+    a_ = a.reshape(ydim, xdim)
+
+    phi = recon(gx_, gy_, dxy[0], dxy[1])
 
     return a_, gx_, gy_, phi
+

@@ -464,7 +464,8 @@ def export_fly2d_as_h5_single(
     compression="gzip",
     save_to_disk=True,
     copy_if_possible=True,
-    save_and_return=False
+    save_and_return=False,
+    lazy_loading = True
 ):
     
         
@@ -571,45 +572,61 @@ def export_fly2d_as_h5_single(
                     print(f"[EXPORT ERROR] Scan {sid} has no diff columns, skipping diff_det_config")
     if save_and_return:
 
-        def load_det():
-            with h5py.File(out_fn, "r") as f:
-                #print(f"[RETURN DATA] diff data is flipped along y axis when returned")
-                return f[f"/diff_data/{det}/det_images"][()]
-            
+        if lazy_loading:
+            return {
+                "det_images": lambda: h5py.File(out_fn, "r")[f"/diff_data/{det}/det_images"],
+                "Io": common.get("Io"),
+                "scan_positions": common.get("scan_positions"),
+                "scan_params": common.get("scan_params"),
+                "xrf_array": common.get("xrf_stack"),
+                "xrf_names": common.get("xrf_names"),
+                "scalar_array": common.get("scalar_stack"),
+                "scalar_names": common.get("scalar_names"),
+            }
+        else:
 
-        """common;
-            "Io": Io,
-            "dim1": dim1,
-            "dim2": dim2,
-            "scan_positions": np.array(xy),
-            "xrf_stack": xrf_stack,
-            "xrf_names": xrf_names,
-            "scalar_stack": scalar_stack,
-            "scalar_names": scalar_names,
-            "scan_params": scan_params,
-            "scan_table": scan_table,
-        """
+            def load_det():
+                with h5py.File(out_fn, "r") as f:
+                    #print(f"[RETURN DATA] diff data is flipped along y axis when returned")
+                    return f[f"/diff_data/{det}/det_images"][()]
+                
 
-        return {
-            "det_images": load_det(),
-            "Io": common.get("Io"),
-            "scan_positions": common.get("scan_positions"),
-            "scan_params": common.get("scan_params"),
-            "xrf_array": common.get("xrf_stack"),
-            "xrf_names": common.get("xrf_names"),
-            "scalar_array": common.get("scalar_stack"),
-            "scalar_names": common.get("scalar_names"),
-        }
+            """common;
+                "Io": Io,
+                "dim1": dim1,
+                "dim2": dim2,
+                "scan_positions": np.array(xy),
+                "xrf_stack": xrf_stack,
+                "xrf_names": xrf_names,
+                "scalar_stack": scalar_stack,
+                "scalar_names": scalar_names,
+                "scan_params": scan_params,
+                "scan_table": scan_table,
+            """
+
+            return {
+                "det_images": load_det(),
+                "Io": common.get("Io"),
+                "scan_positions": common.get("scan_positions"),
+                "scan_params": common.get("scan_params"),
+                "xrf_array": common.get("xrf_stack"),
+                "xrf_names": common.get("xrf_names"),
+                "scalar_array": common.get("scalar_stack"),
+                "scalar_names": common.get("scalar_names"),
+            }
 
     return {
-        "scan_id": sid,
-        "scan_type": scan_type,
-        "detectors": detectors,
-        "exit_status": exit_status or 'success',
-        "status": "exported",
-        "raw_data_path": raw_data_path,
-        "os_user": os_user
-    }
+            "scan_id": sid,
+            "scan_type": scan_type,
+            "Io": common.get("Io"),
+            "detectors": detectors,
+            "exit_status": exit_status or 'success',
+            "status": "exported",
+            "raw_data_path": raw_data_path,
+            "os_user": os_user,
+            "h5_path": out_fn,  # ⬅️ NEW: add this
+            "det_images": lambda: h5py.File(out_fn, "r")[f"/diff_data/{det}/det_images"]  # optional lazy accessor
+}
 
 
     #     return {"scan_id": sid, "scan_type": '2D_FLY_PANDA', "detectors": '', "exit_status": '', "status": f"skipped_error: {e}", "raw_data_path": '', "os_user": os_user}
