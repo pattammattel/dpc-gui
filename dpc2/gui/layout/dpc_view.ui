@@ -24,7 +24,7 @@
        <enum>QTabWidget::North</enum>
       </property>
       <property name="currentIndex">
-       <number>1</number>
+       <number>0</number>
       </property>
       <property name="elideMode">
        <enum>Qt::ElideRight</enum>
@@ -709,6 +709,23 @@
             <widget class="QPushButton" name="pb_recon_dpc">
              <property name="text">
               <string>Recon DPC</string>
+             </property>
+            </widget>
+           </item>
+           <item row="9" column="0">
+            <widget class="QRadioButton" name="rb_com">
+             <property name="text">
+              <string>Center of Mass</string>
+             </property>
+            </widget>
+           </item>
+           <item row="9" column="1">
+            <widget class="QRadioButton" name="rb_cross_corr">
+             <property name="text">
+              <string>Cross Correlation</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
              </property>
             </widget>
            </item>
