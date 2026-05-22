@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.optimize import minimize
+from scipy.ndimage import center_of_mass
 from joblib import Parallel, delayed # type: ignore
 
 
@@ -49,7 +50,7 @@ def calc_img_shift(img_array_2d):
 
     return fx, fy
 
-def recon(gx, gy, dx=0.1, dy=0.1, pad=1, w=1.0, filter = True):
+def recon(gx, gy, dx=0.1, dy=0.1, pad=1, w=1.0, filter = False):
     """
     Reconstruct the final phase image
     Parameters
@@ -133,7 +134,7 @@ def recon(gx, gy, dx=0.1, dy=0.1, pad=1, w=1.0, filter = True):
 # Function to run DPC (Differential Phase Contrast) on a single image
 def run_dpc(img, ref_fx, ref_fy, start_point, 
             max_iters, solver, reverse_x, reverse_y,
-            roi_slice=None, mask=None):
+            roi_slice=None, mask=None, Io = None):
     """
     Run DPC reconstruction on a single image with optional masking and cropping.
 
@@ -153,6 +154,17 @@ def run_dpc(img, ref_fx, ref_fy, start_point,
     # Apply mask
     if mask is not None:
         img = img * mask
+    
+    # Normalize by scalar Io
+    if Io is not None:
+        if np.isscalar(Io):
+            if Io != 0:
+                img = img / Io
+        elif isinstance(Io, np.ndarray) and Io.size == 1 and Io[0] != 0:
+            img = img / Io[0]
+        else:
+            print("[WARNING] Invalid Io; skipping normalization.")
+
 
     # Compute DPC shifts
     fx, fy = calc_img_shift(img)
@@ -186,7 +198,7 @@ def run_dpc(img, ref_fx, ref_fy, start_point,
 # Function to process a stack of images (DPC reconstruction)
 def process_images_stack(det_images, ref_fx, ref_fy, start_point, 
                          max_iter, solver, reverse_x, reverse_y,
-                         roi_slice=None, mask=None):
+                         roi_slice=None, mask=None, Io_array = None):
     # Detect and resolve lazy loader
     if callable(det_images):
         det_images = det_images()  # h5py.Dataset
@@ -207,7 +219,8 @@ def process_images_stack(det_images, ref_fx, ref_fy, start_point,
             ref_fx, ref_fy, start_point,
             max_iter, solver, reverse_x, reverse_y,
             roi_slice=roi_slice,
-            mask=mask
+            mask=mask,
+            Io=Io_array[i] if Io_array is not None else None
         )
         for i in range(num_images)
     )
@@ -218,11 +231,176 @@ def process_images_stack(det_images, ref_fx, ref_fy, start_point,
     return a, gx, gy, rx, ry
 
 
+
+
+def run_dpc(img, ref_fx, ref_fy, start_point, 
+            max_iters, solver, reverse_x, reverse_y,
+            roi_slice=None, mask=None, Io=None,
+            ref_com=None, use_com=False, det_pixel=55, z_m=2.05):
+    """
+    Perform DPC shift estimation for a single image.
+
+    This function supports both the default cross-correlation method
+    (via Fourier domain) and center-of-mass (CoM)–based estimation.
+
+    Parameters
+    ----------
+    img : np.ndarray
+        2D detector image to process.
+    ref_fx : np.ndarray
+        Reference FFT-shifted x-profile (ignored if use_com=True).
+    ref_fy : np.ndarray
+        Reference FFT-shifted y-profile (ignored if use_com=True).
+    start_point : list of float
+        Initial guess for the optimizer [amplitude, shift].
+    max_iters : int
+        Maximum number of iterations for the optimizer.
+    solver : str
+        Optimization method (e.g., "Nelder-Mead", "Powell").
+    reverse_x : int
+        Flip sign for x-gradient direction (+1 or -1).
+    reverse_y : int
+        Flip sign for y-gradient direction (+1 or -1).
+    roi_slice : tuple of slices, optional
+        Slice tuple (y_slice, x_slice) for cropping the image.
+    mask : np.ndarray, optional
+        Binary mask to apply after cropping.
+    Io : float or np.ndarray, optional
+        Normalization scalar for input image.
+    ref_com : tuple of float, optional
+        Reference center-of-mass (cx, cy) for shift subtraction (used if use_com=True).
+    use_com : bool, default=False
+        If True, use center-of-mass estimation instead of cross-correlation.
+    det_pixel : float, default=55e-6
+        Pixel size in meters (used for CoM scaling).
+    z_m : float, default=2.05
+        Detector distance in meters (used for CoM scaling).
+
+    Returns
+    -------
+    a : float
+        Amplitude (sum of image power).
+    gx : float
+        Phase gradient along x (in physical units).
+    gy : float
+        Phase gradient along y (in physical units).
+    rx : float
+        Minimization residual for x (0 if use_com=True).
+    ry : float
+        Minimization residual for y (0 if use_com=True).
+    """
+
+        # Apply ROI crop
+    if roi_slice is not None:
+        img = img[roi_slice]
+
+    # Apply mask
+    if mask is not None:
+        img = img * mask
+
+    # Normalize
+    if Io is not None:
+        if np.isscalar(Io) and Io != 0:
+            img = img / Io
+        elif isinstance(Io, np.ndarray) and Io.size == 1 and Io[0] != 0:
+            img = img / Io[0]
+        else:
+            print("[WARNING] Invalid Io; skipping normalization.")
+
+    # ----- Branch: Use Center of Mass (CoM) -----
+    if use_com:
+        power = img ** 2
+        cx, cy = center_of_mass(np.fft.fftshift(power))
+        a = np.sum(power)
+
+        gx = cx * det_pixel*1e-6 / z_m
+        gy = cy * det_pixel*1e-6 / z_m
+
+        # Subtract reference if given
+        if ref_com is not None:
+             
+            ref_cx, ref_cy = center_of_mass(np.fft.fftshift(ref_com))
+            gx -= ref_cx * det_pixel*1e-6  / z_m
+            gy -= ref_cy * det_pixel*1e-6  / z_m
+
+        return a, gx, gy, 0.0, 0.0  # rx, ry not meaningful for CoM
+
+    # ----- Otherwise: Use Cross-Correlation DPC -----
+    fx, fy = calc_img_shift(img)
+
+    res_x = minimize(rss, start_point, args=(ref_fx, fx, get_beta(ref_fx)),
+                     method=solver, tol=1e-6, options=dict(maxiter=max_iters))
+    vx_x = res_x.x
+    rx = res_x.fun
+    a = vx_x[0]
+    gx = reverse_x * vx_x[1]
+
+    res_y = minimize(rss, start_point, args=(ref_fy, fy, get_beta(ref_fy)),
+                     method=solver, tol=1e-6, options=dict(maxiter=max_iters))
+    vy_y = res_y.x
+    ry = res_y.fun
+    gy = reverse_y * vy_y[1]
+
+    return a, gx, gy, rx, ry
+
+
+
+def process_images_stack(det_images, ref_fx, ref_fy, start_point, 
+                         max_iter, solver, reverse_x, reverse_y,
+                         roi_slice=None, mask=None, Io_array=None,
+                         use_com=False, det_pixel=55, z_m=2.05):
+
+    if callable(det_images):
+        det_images = det_images()
+
+    n_frames = det_images.shape[0]
+    a = np.zeros(n_frames)
+    gx = np.zeros(n_frames)
+    gy = np.zeros(n_frames)
+    rx = np.zeros(n_frames)
+    ry = np.zeros(n_frames)
+
+    ref_com = None
+    if use_com:
+        print("using center of mass method")
+        ref_img = det_images[0]
+        if roi_slice is not None:
+            ref_img = ref_img[roi_slice]
+        if mask is not None:
+            ref_img = ref_img * mask
+        if Io_array is not None:
+            ref_img = ref_img / Io_array[0]
+        power = ref_img ** 2
+        ref_com = center_of_mass(power)
+
+    results = Parallel(n_jobs=-1)(
+        delayed(run_dpc)(
+            det_images[i, :, :],
+            ref_fx, ref_fy, start_point,
+            max_iter, solver, reverse_x, reverse_y,
+            roi_slice=roi_slice,
+            mask=mask,
+            Io=Io_array[i] if Io_array is not None else None,
+            ref_com=ref_com,
+            use_com=use_com,
+            det_pixel=det_pixel,
+            z_m=z_m
+        )
+        for i in range(n_frames)
+    )
+
+    for i, result in enumerate(results):
+        a[i], gx[i], gy[i], rx[i], ry[i] = result
+
+    return a, gx, gy, rx, ry
+
+
+
 # Main function to reconstruct DPC from a stack of images
 def recon_dpc_from_im_stack(det_images, ref_image_num=1, start_point=[1, 0], num_xy=[20, 20],
                             max_iter=1000, solver="Nelder-Mead", reverse_x=1, reverse_y=1,
                             energy=12, det_pixel=55, det_dist=2.05, dxy=[0.020, 0.020],
-                            roi_slice=None, mask=None):
+                            roi_slice=None, mask=None, Io_array = None, use_com = False):
     """
     Reconstructs DPC phase image from a 3D (or lazy) image stack.
 
@@ -267,7 +445,7 @@ def recon_dpc_from_im_stack(det_images, ref_image_num=1, start_point=[1, 0], num
         dataset, ref_fx, ref_fy, start_point,
         max_iter, solver, reverse_x, reverse_y,
         roi_slice=roi_slice,
-        mask=mask
+        mask=mask, Io_array=Io_array, use_com=use_com
     )
 
     # DPC scaling
@@ -281,4 +459,3 @@ def recon_dpc_from_im_stack(det_images, ref_image_num=1, start_point=[1, 0], num
     phi = recon(gx_, gy_, dxy[0], dxy[1])
 
     return a_, gx_, gy_, phi
-

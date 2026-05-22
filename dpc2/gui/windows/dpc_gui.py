@@ -7,6 +7,7 @@ from difflib import get_close_matches
 import numpy as np
 import pyqtgraph as pg
 import tifffile as tf
+import traceback
 from scipy.ndimage import center_of_mass
 from pyqtgraph import functions as fn
 from functools import wraps
@@ -144,7 +145,7 @@ class DiffViewWindow(QtWidgets.QMainWindow):
         self.diff_im_view.scene().sigMouseClicked.connect(self.on_mouse_doubleclick)
         self.pb_plot_mask.clicked.connect(self.plot_mask)
         self.pb_apply_mask.clicked.connect(self.apply_mask)
-        self.pb_apply_roi.clicked.connect(self.get_masked_cropped_data)
+        self.pb_apply_roi.clicked.connect(lambda:self.get_masked_cropped_data())
         self.pb_recon_dpc.clicked.connect(self._recon_dpc)
     
     def __del__(self):
@@ -246,8 +247,8 @@ class DiffViewWindow(QtWidgets.QMainWindow):
 
     def get_diff_data(self):
         self.diff_stack = self.all_data_dict.get("det_images")
-        self.Io = self.all_data_dict.get("Io")
-
+        self.Io = self.all_data_dict.get("Io").flatten()
+        
         if self.diff_stack is None:
             raise ValueError("Missing 'det_images' in loaded data.")
 
@@ -292,14 +293,19 @@ class DiffViewWindow(QtWidgets.QMainWindow):
 
     def display_diff_data(self, im_index=0):
         # If it's a lazy loader (function), call it and get the dataset object (not full array)
+        self.diff_im_view.plotItem.vb.invertY(True)  # 
+        
         if callable(self.diff_stack):
             dataset = self.diff_stack()  # e.g., h5py.Dataset
             self.sb_ref_img_num.setMaximum(int(dataset.shape[0]) - 1)
             self.display_data = dataset[im_index, :, :]  # Load only one frame
         else:
-            # Eager-loaded NumPy array
             self.sb_ref_img_num.setMaximum(int(self.diff_stack.shape[0]) - 1)
             self.display_data = self.diff_stack[im_index, :, :]
+
+        # Remove previous image
+        if hasattr(self, "img_item") and self.img_item in self.diff_im_view.items():
+            self.diff_im_view.removeItem(self.img_item)
 
         # Display the image
         self.img_item = pg.ImageItem()
@@ -308,9 +314,13 @@ class DiffViewWindow(QtWidgets.QMainWindow):
         self.img_item.setColorMap(lut)
         self.diff_im_view.addItem(self.img_item)
 
-        # Remove existing ROI if present
+        # Remove existing ROI
         if hasattr(self, "roi") and self.roi in self.diff_im_view.items():
             self.diff_im_view.removeItem(self.roi)
+
+        if hasattr(self, "mask_overlay") and self.mask_overlay in self.diff_im_view.items():
+            self.diff_im_view.removeItem(self.mask_overlay)
+
 
         # Add ROI
         self.create_roi()
@@ -325,6 +335,7 @@ class DiffViewWindow(QtWidgets.QMainWindow):
         self.mask_overlay.setOpts(opacity=0.4, lut=self._make_mask_lut())
         self.diff_im_view.addItem(self.mask_overlay)
         self.update_mask_overlay()
+
 
 
 
@@ -391,8 +402,8 @@ class DiffViewWindow(QtWidgets.QMainWindow):
         masked = self.display_data * self.mask
         # Open a new window to show masked result
         self.win_masked = pg.ImageView()
+        self.win_masked.getView().invertY(True)
         self.win_masked.setImage(masked)
-        self.win_masked.getView().invertY(False)
         self.win_masked.setWindowTitle("Mask")
         self.win_masked.setPredefinedGradient("viridis")
         self.win_masked.show()
@@ -401,8 +412,8 @@ class DiffViewWindow(QtWidgets.QMainWindow):
         # Open a new window to show masked result
         print("plotting mask")
         self.win_mask = pg.ImageView()
+        self.win_mask.getView().invertY(True)
         self.win_mask.setImage(self.mask)
-        self.win_mask.getView().invertY(False)
         self.win_mask.setWindowTitle("Mask")
         self.win_mask.setPredefinedGradient("bipolar")
         self.win_mask.show()
@@ -413,28 +424,6 @@ class DiffViewWindow(QtWidgets.QMainWindow):
         print(f"ROI Position: {pos}, Size: {size}")
         return pos,size
     
-    def get_masked_cropped_data_(self):
-        # Apply mask to the currently displayed image
-        masked_image = self.display_data * self.mask
-
-        # Use the ROI to extract the region from the masked image
-        cropped = self.roi.getArrayRegion(
-            masked_image,
-            self.img_item,
-            returnMappedCoords=False,
-            order=0
-        )
-
-        # Display the cropped image
-        self.win_cropped = pg.ImageView()
-        self.win_cropped.setImage(cropped)
-        self.win_cropped.setWindowTitle("Cropped and Masked Image")
-        self.win_cropped.getView().invertY(False)
-        self.win_cropped.setPredefinedGradient("viridis")
-        self.win_cropped.show()
-
-        # Optionally store for reuse
-        self.cropped_stack = cropped
 
 
     def get_masked_cropped_data(self, plot_after = True):
@@ -458,9 +447,9 @@ class DiffViewWindow(QtWidgets.QMainWindow):
 
             # Display the cropped image
             self.win_cropped = pg.ImageView()
+            self.win_cropped.getView().invertY(True)
             self.win_cropped.setImage(self.cropped_stack)
             self.win_cropped.setWindowTitle("Cropped and Masked Image")
-            self.win_cropped.getView().invertY(False)
             self.win_cropped.setPredefinedGradient("viridis")
             self.win_cropped.show()
 
@@ -473,58 +462,6 @@ class DiffViewWindow(QtWidgets.QMainWindow):
     def find_and_mask_hot_pixels(self):
         pass
 
-    def _recon_dpc_(self):
-        # GUI parameters
-        ref_img = self.sb_ref_img_num.value()
-        max_iter = self.sb_max_iter.value()
-        solver = self.cb_solvers.currentText()
-        reverse_gy = -1 if self.cb_reverse_gy.isChecked() else 1
-        reverse_gx = -1 if self.cb_reverse_gx.isChecked() else 1
-        energy = self.dsb_energy.value()
-        det_pixel = self.dsb_det_pixel_size.value()
-        det_dist = self.dsb_det_dist.value()
-        dxy = [self.dsb_x_step.value(), self.dsb_y_step.value()]
-        num_xy = [self.sb_y_num.value(), self.sb_x_num.value()]
-
-        # Determine if using lazy-loaded data
-        is_lazy = callable(self.diff_stack)
-        dataset = self.diff_stack if is_lazy else self.cropped_stack
-
-        # Ensure ROI and mask are available if needed
-        
-        if not hasattr(self, "roi_slice") or not hasattr(self, "mask_roi"):
-            print("[INFO] ROI or mask not initialized, calling get_masked_cropped_data()")
-            self.get_masked_cropped_data(plot_after=False)
-            roi_slice = self.roi_slice
-            mask = self.mask_roi
-
-        # Run reconstruction
-        a_, gx_, gy_, phi = recon_dpc_from_im_stack(
-            dataset,
-            ref_image_num=ref_img,
-            start_point=[1, 0],
-            max_iter=max_iter,
-            solver=solver,
-            reverse_x=reverse_gx,
-            reverse_y=reverse_gy,
-            energy=energy,
-            det_pixel=det_pixel,
-            det_dist=det_dist,
-            dxy=dxy,
-            num_xy=num_xy,
-            roi_slice=roi_slice,
-            mask=mask
-        )
-
-        # Display results
-        self.gx_im_view.setImage(gx_)
-        self.gx_im_view.view.setWindowTitle("Gradient_x")
-        self.gy_im_view.setImage(gy_)
-        self.gy_im_view.setWindowTitle("Gradient_y")
-        self.amp_im_view.setImage(a_)
-        self.amp_im_view.setWindowTitle("Gradient_Amplitude")
-        self.phase_im_view.setImage(phi)
-        self.phase_im_view.setWindowTitle("Phase")
 
     def _recon_dpc(self):
         # Extract GUI params
@@ -538,6 +475,7 @@ class DiffViewWindow(QtWidgets.QMainWindow):
         det_dist = self.dsb_det_dist.value()
         dxy = [self.dsb_x_step.value(), self.dsb_y_step.value()]
         num_xy = [self.sb_y_num.value(), self.sb_x_num.value()]
+        use_com = self.rb_com.isChecked()    
 
         is_lazy = callable(self.diff_stack)
         dataset = self.diff_stack if is_lazy else self.cropped_stack
@@ -554,7 +492,7 @@ class DiffViewWindow(QtWidgets.QMainWindow):
         self.dpc_worker = DPCWorker(
             dataset, ref_img, [1, 0], max_iter, solver,
             reverse_gx, reverse_gy, energy, det_pixel, det_dist,
-            dxy, num_xy, roi_slice, mask
+            dxy, num_xy, roi_slice, mask, self.Io, use_com=use_com
         )
         self.dpc_worker.moveToThread(self.dpc_thread)
 
@@ -590,11 +528,16 @@ class DiffViewWindow(QtWidgets.QMainWindow):
         self.phase_im_view.setImage(phi)
         self.phase_im_view.setWindowTitle("Phase")
 
+
     def _handle_dpc_error(self, e):
         if hasattr(self, "dpc_progress"):
             self.dpc_progress.close()
 
+        print("\n--- DPC Worker Error Traceback ---")
+        traceback.print_exception(type(e), e, e.__traceback__, file=sys.stdout)
+
         QMessageBox.critical(self, "DPC Reconstruction Error", str(e))
+
 
 
 
@@ -606,7 +549,7 @@ class DPCWorker(QObject):
 
     def __init__(self, dataset, ref_img, start_point, max_iter, solver,
                  reverse_x, reverse_y, energy, det_pixel, det_dist,
-                 dxy, num_xy, roi_slice, mask):
+                 dxy, num_xy, roi_slice, mask, Io_array, use_com):
         super().__init__()
         self.dataset = dataset
         self.ref_img = ref_img
@@ -622,6 +565,8 @@ class DPCWorker(QObject):
         self.num_xy = num_xy
         self.roi_slice = roi_slice
         self.mask = mask
+        self.Io_array = Io_array
+        self.use_com = use_com
 
     def run(self):
         try:
@@ -639,7 +584,9 @@ class DPCWorker(QObject):
                 dxy=self.dxy,
                 num_xy=self.num_xy,
                 roi_slice=self.roi_slice,
-                mask=self.mask
+                mask=self.mask,
+                Io_array =self.Io_array, 
+                use_com=self.use_com
             )
             self.finished.emit(a_, gx_, gy_, phi)
         except Exception as e:
@@ -649,7 +596,6 @@ class DPCWorker(QObject):
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
-    app.setStyleSheet(load_stylesheet(os.path.join(ui_path,"style_sheet.css")))
     font = QtGui.QFont("Arial", 10)
     app.setFont(font)   
     w = DiffViewWindow()
