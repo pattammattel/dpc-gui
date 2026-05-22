@@ -1,5 +1,5 @@
 import pytest
-from PyQt5.QtWidgets import QApplication
+from qtpy.QtWidgets import QApplication
 from dpc2.gui.windows.dpc2_window import dpc2Window
 
 @pytest.fixture(scope='module')

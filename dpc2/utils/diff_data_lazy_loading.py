@@ -13,7 +13,7 @@ except ImportError:
     except ImportError:
         db = None
         print("Offline analysis; hxntools not found")
-        
+
 
 
 def lazy_return_data(scan_id, key_name='merlin1', dataset_path='/entry/instrument/detector/data', return_file=False):
@@ -100,3 +100,72 @@ def lazy_return_data(scan_id, key_name='merlin1', dataset_path='/entry/instrumen
         print(f"Warning: Dataset path '{dataset_path}' not found in file.")
         print(f"Available keys: {list(file_handle.keys())}")
         return file_handle if return_file else None
+
+
+def sum_frames_chunked(dataset, chunk_size=100, axes=(1, 2)):
+    """
+    Memory-efficient sum over spatial dimensions (x, y) for (num_frames, x, y) data.
+    Processes data in chunks to avoid loading entire dataset into memory.
+    
+    Parameters
+    ----------
+    dataset : h5py.Dataset or np.ndarray
+        Data with shape (num_frames, x, y)
+    chunk_size : int, optional
+        Number of frames to load at once (default: 100)
+    axes : tuple, optional
+        Axes to sum over (default: (1, 2) for x and y)
+    
+    Returns
+    -------
+    np.ndarray
+        1D array of shape (num_frames,) with sum of each frame
+    
+    Examples
+    --------
+    # Memory-efficient sum:
+    data = lazy_return_data(349821)
+    frame_sums = sum_frames_chunked(data, chunk_size=50)
+    
+    # Or with direct file access:
+    with h5py.File('data.h5', 'r') as f:
+        data = f['/entry/instrument/detector/data']
+        sums = sum_frames_chunked(data)
+    """
+    num_frames = dataset.shape[0]
+    result = np.zeros(num_frames, dtype=np.float64)
+    
+    # Process in chunks
+    for i in range(0, num_frames, chunk_size):
+        end_idx = min(i + chunk_size, num_frames)
+        # Load only chunk_size frames at a time
+        chunk = dataset[i:end_idx]
+        # Sum over x,y dimensions for this chunk
+        result[i:end_idx] = np.sum(chunk, axis=axes)
+        
+    return result
+
+
+def sum_frames_direct(dataset, axes=(1, 2)):
+    """
+    Direct sum over spatial dimensions - loads all data into memory.
+    Fast but memory-intensive. Use only if dataset fits in RAM.
+    
+    Parameters
+    ----------
+    dataset : h5py.Dataset or np.ndarray
+        Data with shape (num_frames, x, y)
+    axes : tuple, optional
+        Axes to sum over (default: (1, 2) for x and y)
+    
+    Returns
+    -------
+    np.ndarray
+        1D array of shape (num_frames,) with sum of each frame
+    
+    Examples
+    --------
+    data = lazy_return_data(349821)
+    frame_sums = sum_frames_direct(data)  # Loads all into memory
+    """
+    return np.sum(dataset[()], axis=axes)

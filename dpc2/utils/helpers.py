@@ -1,6 +1,6 @@
 from functools import wraps
-from PyQt5.QtCore import QObject, QThread, pyqtSignal, Qt
-from PyQt5.QtWidgets import QProgressDialog, QMessageBox, QApplication
+from qtpy.QtCore import QObject, QThread, pyqtSignal, Qt
+from qtpy.QtWidgets import QProgressDialog, QMessageBox, QApplication
 
 
 class Worker(QObject):

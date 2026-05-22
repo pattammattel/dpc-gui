@@ -10,12 +10,12 @@ import tifffile as tf
 from scipy.ndimage import center_of_mass
 from pyqtgraph import functions as fn
 from functools import wraps
-# from PyQt5 import QtWidgets, uic, QtCore, QtGui, QtTest
+# from qtpy import QtWidgets, uic, QtCore, QtGui, QtTest
 # from PyQt6.QtWidgets import QMessageBox
 # from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt5 import QtWidgets, uic, QtCore, QtGui, QtTest
-from PyQt5.QtWidgets import QMessageBox, QProgressDialog
-from PyQt5.QtCore import QObject, QThread, pyqtSignal,Qt
+from qtpy import QtWidgets, uic, QtCore, QtGui, QtTest
+from qtpy.QtWidgets import QMessageBox, QProgressDialog
+from qtpy.QtCore import QObject, QThread, pyqtSignal,Qt
 pg.setConfigOption('imageAxisOrder', 'row-major') # best performance
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 from dpc2.utils.dpc_fileio import *

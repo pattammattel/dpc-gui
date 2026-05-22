@@ -1,6 +1,6 @@
 import sys
 import logging
-from PyQt5 import QtWidgets
+from qtpy import QtWidgets
 from dpc2.gui.windows.dpc_gui import DiffViewWindow
 from dpc2.gui import UI_DIR
 
