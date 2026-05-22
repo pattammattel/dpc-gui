@@ -1,4 +1,4 @@
-[project] # Use [project] instead of [workspace] for a single package
+[workspace] # Use [project] instead of [workspace] for a single package
 authors = ["Ajith Pattammattel <pattammattel@bnl.gov>"]
 channels = ["conda-forge"]
 name = "dpc2-gui"
@@ -41,6 +41,11 @@ scipy = ">=1.17.0,<2"
 tifffile = ">=2026.1.28,<2027"
 packaging = ">=26.0,<27"
 qtpy = ">=2.4.3,<3"
+matplotlib = ">=3.10.9,<4"
+pims = ">=0.7,<0.8"
+doct = ">=1.1.0,<2"
+pytz = ">=2026.2,<2027"
+xarray = ">=2026.4.0,<2027"
 # REMOVED pyqt6 from here
 
 [pypi-dependencies]
@@ -48,4 +53,6 @@ pystackreg = ">=0.2.8, <0.3"
 xraydb = ">=4.5.8, <5"
 pyqtgraph = ">=0.14.0, <0.15"
 opencv-python = ">=4.13.0.92, <5"
+hxntools = ">=0.6.5, <0.7"
+bluesky-tiled-plugins = ">=2.0.3, <3"
 

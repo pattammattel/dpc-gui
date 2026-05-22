@@ -15,7 +15,7 @@ from functools import wraps
 # from PyQt6.QtCore import QObject, pyqtSignal
 from qtpy import QtWidgets, uic, QtCore, QtGui, QtTest
 from qtpy.QtWidgets import QMessageBox, QProgressDialog
-from qtpy.QtCore import QObject, QThread, pyqtSignal,Qt
+from qtpy.QtCore import QObject, QThread, Signal, Qt
 pg.setConfigOption('imageAxisOrder', 'row-major') # best performance
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 from dpc2.utils.dpc_fileio import *
@@ -100,7 +100,7 @@ def extract_detector_name(filename, detector_list, fuzzy_cutoff=0.6):
     
 class EmittingStream(QObject):
 
-    textWritten = pyqtSignal(str)
+    textWritten = Signal(str)
 
     def write(self, text):
         self.textWritten.emit(str(text))
@@ -601,8 +601,8 @@ class DiffViewWindow(QtWidgets.QMainWindow):
 
 
 class DPCWorker(QObject):
-    finished = pyqtSignal(object, object, object, object)
-    error = pyqtSignal(Exception)
+    finished = Signal(object, object, object, object)
+    error = Signal(Exception)
 
     def __init__(self, dataset, ref_img, start_point, max_iter, solver,
                  reverse_x, reverse_y, energy, det_pixel, det_dist,

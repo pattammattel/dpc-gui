@@ -13,20 +13,23 @@ from tqdm import tqdm
 from pathlib import Path
 from dpc2.gui import DETECTOR_DATA_KEY_MAP
 
-try:
-    from hxntools.CompositeBroker import db
-    from hxntools.scan_info import get_scan_positions
-except ImportError:
-    print("Trying overlay environment...")
-    sys.path.insert(0, '/nsls2/data2/hxn/shared/config/bluesky_overlay/2023-1.0-py310-tiled/lib/python3.10/site-packages')
-    try:
-        from hxntools.CompositeBroker import db
-        from hxntools.scan_info import get_scan_positions
-        #print("Offline analysis; loaded hxntools manually")
-    except ImportError:
-        db = None
-        get_scan_positions = None
-        print("Offline analysis; hxntools not found")
+from hxntools.CompositeBroker import db
+from hxntools.scan_info import get_scan_positions
+
+# try:
+#     from hxntools.CompositeBroker import db
+#     from hxntools.scan_info import get_scan_positions
+# except ImportError:
+#     print("Trying overlay environment...")
+#     sys.path.insert(0, '/nsls2/data2/hxn/shared/config/bluesky_overlay/2023-1.0-py310-tiled/lib/python3.10/site-packages')
+#     try:
+#         from hxntools.CompositeBroker import db
+#         from hxntools.scan_info import get_scan_positions
+#         #print("Offline analysis; loaded hxntools manually")
+#     except ImportError:
+#         db = None
+#         get_scan_positions = None
+#         print("Offline analysis; hxntools not found")
 
 
 import csv

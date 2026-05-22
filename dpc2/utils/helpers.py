@@ -1,11 +1,11 @@
 from functools import wraps
-from qtpy.QtCore import QObject, QThread, pyqtSignal, Qt
+from qtpy.QtCore import QObject, QThread, Signal, Qt
 from qtpy.QtWidgets import QProgressDialog, QMessageBox, QApplication
 
 
 class Worker(QObject):
-    finished = pyqtSignal(object)
-    error = pyqtSignal(Exception)
+    finished = Signal(object)
+    error = Signal(Exception)
 
     def __init__(self, func, args, kwargs):
         super().__init__()
